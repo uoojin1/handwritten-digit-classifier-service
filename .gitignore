@@ -1,3 +1,4 @@
 .vscode
 venv/
 *.jpg
+__pycache__
