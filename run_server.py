@@ -10,6 +10,7 @@ import numpy as np
 import flask
 from flask_cors import CORS
 import io
+import os
 from w3lib.url import parse_data_uri
 
 # initialize the flask application and the keras model
