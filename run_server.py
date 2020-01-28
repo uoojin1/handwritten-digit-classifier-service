@@ -90,5 +90,7 @@ def predict():
 
 if __name__ == "__main__":
   print("Starting the flask server...")
+  port = int(os.environ.get("PORT", 5000))
+  print("port", port)
   load_model()
-  app.run(threaded=False)
+  app.run(threaded=False, port=port)
