@@ -1,20 +1,47 @@
 # import packages
-from keras.applications import ResNet50
+from keras.models import Sequential
+from keras.layers import Dense, Lambda, Flatten, Convolution2D, MaxPooling2D, SpatialDropout2D, Dropout
+from keras.layers.normalization import BatchNormalization
+from keras.optimizers import Adam, RMSprop
 from keras_preprocessing.image import img_to_array
 from keras.applications import imagenet_utils
 from PIL import Image
 import numpy as np
 import flask
+from flask_cors import CORS
 import io
+from w3lib.url import parse_data_uri
 
 # initialize the flask application and the keras model
 app = flask.Flask(__name__)
+CORS(app)
+
 model = None
 
 def load_model():
   global model
   # load the pretrained imagenet weight
-  model = ResNet50(weights="imagenet")
+  # create a sequential model
+  model = Sequential()
+
+  # standardize and flatten the 28 x 28 input
+  # element-wise standardization
+  model.add(Convolution2D(32, (3,3), activation='relu', input_shape=(28,28,1)))
+  model.add(Convolution2D(32, (3,3), activation='relu'))
+  model.add(MaxPooling2D())
+  model.add(Convolution2D(32, (3,3), activation='relu'))
+  model.add(Convolution2D(32, (3,3), activation='relu'))
+  model.add(MaxPooling2D())
+  model.add(Flatten())
+  model.add(Dense(512, activation='relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(10, activation='softmax'))
+
+  rms = RMSprop(learning_rate=0.001, rho=0.9)
+
+  model.compile(optimizer=rms, loss='categorical_crossentropy', metrics=['accuracy'])
+
+  model.load_weights('my_model_weights.h5')
 
 def prepare_image(image, targetSize):
   '''
@@ -23,17 +50,15 @@ def prepare_image(image, targetSize):
     image - the input image that will be processed
     targetSize - the size that the processed image should be. ex. (244, 244)
   '''
-  # convert image to RGB
-  if image.mode != "RGB":
-    image = image.convert("RGB")
-  print(image)
+  # convert image to Grayscale
+  if image.mode != "L":
+    image = image.convert('RGB')
+    image = image.convert('L')
+
   # resize the image 
   image = image.resize(targetSize)
-  # transform the image into a 3D tensor for the preprocessor
   image = img_to_array(image)
   image = np.expand_dims(image, axis=0)
-  # preprocess the image via mean subtraction and scaling
-  image = imagenet_utils.preprocess_input(image)
 
   # return the preprocessed image
   return image
@@ -43,31 +68,27 @@ def predict():
   data = {"success": False}
 
   if flask.request.method == "POST":
-    if flask.request.files.get("image"):
+    imgData = flask.request.data
+    parsed = parse_data_uri(imgData)
+
+    if parsed:
       # read the image in PIL format
-      image = flask.request.files["image"].read()
-      image = Image.open(io.BytesIO(image))
-
+      image = Image.open(io.BytesIO(parsed.data))
       # preprocess the image prior to classification
-      image = prepare_image(image, (224, 224))
-
+      image = prepare_image(image, (28, 28))
       # classify the input image with the model
       preds = model.predict(image)
-
       # decode the prediction results
-      results = imagenet_utils.decode_predictions(preds)
-      data["predictions"] = []
-
-      # loop over the results and add them to the list of predictions
-      for (_, label, probability) in results[0]:
-        result = { "label": label, "probability": float(probability) }
-        data["predictions"].append(result)
-      
+      label = int(np.argmax(preds))
+      probability = preds[0][label] * 100
+      # form the response
+      result = { "label": label, "probability": float(probability) }
+      data["prediction"] = result
       data["success"] = True
 
   return flask.jsonify(data)
 
 if __name__ == "__main__":
-  print "Starting the flask server..."
+  print("Starting the flask server...")
   load_model()
   app.run(threaded=False)
